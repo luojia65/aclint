@@ -10,3 +10,10 @@ license = "MulanPSL-2.0 OR MIT"
 readme = "README.md"
 keywords = ["riscv"]
 categories = ["embedded", "hardware-support", "no-std"]
+
+[dependencies]
+rustsbi = { git = "https://github.com/rustsbi/rustsbi", optional = true }
+
+[features]
+default = ["rustsbi"]
+rustsbi = ["dep:rustsbi"]

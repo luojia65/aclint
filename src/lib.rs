@@ -19,8 +19,27 @@ pub struct SETSSIP(UnsafeCell<u32>);
 #[repr(transparent)]
 pub struct MTIMER([MTIMECMP; 4095]);
 
-#[repr(transparent)]
-pub struct MSWI([MSIP; 4095]);
+/// Machine-level Software Interrupt Device (MSWI).
+#[repr(C)]
+pub struct MSWI {
+    msip: [MSIP; 4095],
+    _reserved: u32,
+}
+
+#[cfg(feature = "rustsbi")]
+impl rustsbi::Ipi for MSWI {
+    #[inline]
+    fn send_ipi(&self, hart_mask: rustsbi::HartMask) -> rustsbi::SbiRet {
+        let (hart_mask, hart_mask_base) = hart_mask.into_inner();
+        for i in 0..core::mem::size_of::<usize>() {
+            if hart_mask & (1 << i) != 0 {
+                let hart_id = hart_mask_base + i;
+                unsafe { self.msip[hart_id].0.get().write_volatile(1) };
+            }
+        }
+        rustsbi::SbiRet::success(0)
+    }
+}
 
 #[repr(transparent)]
 pub struct SSWI([SETSSIP; 4095]);
@@ -28,9 +47,16 @@ pub struct SSWI([SETSSIP; 4095]);
 #[repr(C)]
 pub struct SifiveClint {
     mswi: MSWI,
-    reserve: u32,
     mtimer: MTIMER,
     mtime: MTIME,
+}
+
+#[cfg(feature = "rustsbi")]
+impl rustsbi::Ipi for SifiveClint {
+    #[inline]
+    fn send_ipi(&self, hart_mask: rustsbi::HartMask) -> rustsbi::SbiRet {
+        self.mswi.send_ipi(hart_mask)
+    }
 }
 
 impl SifiveClint {
@@ -59,17 +85,17 @@ impl SifiveClint {
 
     #[inline]
     pub fn read_msip(&self, hart_idx: usize) -> bool {
-        unsafe { self.mswi.0[hart_idx].0.get().read_volatile() != 0 }
+        unsafe { self.mswi.msip[hart_idx].0.get().read_volatile() != 0 }
     }
 
     #[inline]
     pub fn set_msip(&self, hart_idx: usize) {
-        unsafe { self.mswi.0[hart_idx].0.get().write_volatile(1) }
+        unsafe { self.mswi.msip[hart_idx].0.get().write_volatile(1) }
     }
 
     #[inline]
     pub fn clear_msip(&self, hart_idx: usize) {
-        unsafe { self.mswi.0[hart_idx].0.get().write_volatile(0) }
+        unsafe { self.mswi.msip[hart_idx].0.get().write_volatile(0) }
     }
 }
 
@@ -202,7 +228,7 @@ impl SifiveClint {
 
 #[test]
 fn test() {
-    assert_eq!(core::mem::size_of::<MSWI>(), 0x3ffc);
+    assert_eq!(core::mem::size_of::<MSWI>(), 0x4000);
     assert_eq!(core::mem::size_of::<SSWI>(), 0x3ffc);
     assert_eq!(core::mem::size_of::<MTIMER>(), 0x7ff8);
     assert_eq!(core::mem::size_of::<SifiveClint>(), 0xc000);
