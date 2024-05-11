@@ -20,25 +20,27 @@ pub struct SETSSIP(UnsafeCell<u32>);
 pub struct MTIMER([MTIMECMP; 4095]);
 
 /// Machine-level Software Interrupt Device (MSWI).
+///
+/// # Usage
+///
+/// ```no_run
+/// impl rustsbi::Ipi for Clint {
+///     #[inline]
+///     fn send_ipi(&self, hart_mask: HartMask) -> SbiRet {
+///         for i in hart_ids() {
+///             if hart_mask.has_bit(i) && remote_hsm(i).map_or(false, |hsm| hsm.allow_ipi()) {
+///                 // we assume this MSWI device covers hart id beginning from #0.
+///                 self.mswi().set_msip(i);
+///             }
+///         }
+///         SbiRet::success(0)
+///     }
+/// }
+/// ```
 #[repr(C)]
 pub struct MSWI {
     msip: [MSIP; 4095],
     _reserved: u32,
-}
-
-#[cfg(feature = "rustsbi")]
-impl rustsbi::Ipi for MSWI {
-    #[inline]
-    fn send_ipi(&self, hart_mask: rustsbi::HartMask) -> rustsbi::SbiRet {
-        let (hart_mask, hart_mask_base) = hart_mask.into_inner();
-        for i in 0..core::mem::size_of::<usize>() {
-            if hart_mask & (1 << i) != 0 {
-                let hart_id = hart_mask_base + i;
-                unsafe { self.msip[hart_id].0.get().write_volatile(1) };
-            }
-        }
-        rustsbi::SbiRet::success(0)
-    }
 }
 
 #[repr(transparent)]
@@ -49,14 +51,6 @@ pub struct SifiveClint {
     mswi: MSWI,
     mtimer: MTIMER,
     mtime: MTIME,
-}
-
-#[cfg(feature = "rustsbi")]
-impl rustsbi::Ipi for SifiveClint {
-    #[inline]
-    fn send_ipi(&self, hart_mask: rustsbi::HartMask) -> rustsbi::SbiRet {
-        self.mswi.send_ipi(hart_mask)
-    }
 }
 
 impl SifiveClint {
