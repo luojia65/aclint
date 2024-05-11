@@ -4,20 +4,21 @@
 
 use core::{arch::asm, cell::UnsafeCell, mem::size_of};
 
+/// Machine-level time counter register.
 #[repr(transparent)]
 pub struct MTIME(UnsafeCell<u64>);
 
+/// Machine-level time compare register.
 #[repr(transparent)]
 pub struct MTIMECMP(UnsafeCell<u64>);
 
+/// Machine-level IPI register.
 #[repr(transparent)]
 pub struct MSIP(UnsafeCell<u32>);
 
+/// Set supervisor-level IPI register.
 #[repr(transparent)]
 pub struct SETSSIP(UnsafeCell<u32>);
-
-#[repr(transparent)]
-pub struct MTIMER([MTIMECMP; 4095]);
 
 /// Machine-level Software Interrupt Device (MSWI).
 ///
@@ -39,23 +40,29 @@ pub struct MTIMER([MTIMECMP; 4095]);
 /// ```
 #[repr(C)]
 pub struct MSWI {
-    msip: [MSIP; 4095],
+    /// HART index 0..4095 machine-level IPI registers.
+    pub msip: [MSIP; 4095],
     _reserved: u32,
 }
 
-#[repr(transparent)]
-pub struct SSWI([SETSSIP; 4095]);
+/// Supervisor-level Software Interrupt Device (SSWI).
+#[repr(C)]
+pub struct SSWI {
+    pub setssip: [SETSSIP; 4095],
+    _reserved: u32,
+}
 
+/// SiFive Core-Local Interruptor (CLINT) device.
 #[repr(C)]
 pub struct SifiveClint {
-    mswi: MSWI,
-    mtimer: MTIMER,
-    mtime: MTIME,
+    pub mswi: MSWI,
+    pub mtimecmp: [MTIMECMP; 4095],
+    pub mtime: MTIME,
 }
 
 impl SifiveClint {
     const MTIMER_OFFSET: usize = size_of::<MSWI>() + size_of::<u32>();
-    const MTIME_OFFSET: usize = Self::MTIMER_OFFSET + size_of::<MTIMER>();
+    const MTIME_OFFSET: usize = Self::MTIMER_OFFSET + size_of::<[MTIMECMP; 4095]>();
 
     #[inline]
     pub fn read_mtime(&self) -> u64 {
@@ -69,12 +76,12 @@ impl SifiveClint {
 
     #[inline]
     pub fn read_mtimecmp(&self, hart_idx: usize) -> u64 {
-        unsafe { self.mtimer.0[hart_idx].0.get().read_volatile() }
+        unsafe { self.mtimecmp[hart_idx].0.get().read_volatile() }
     }
 
     #[inline]
     pub fn write_mtimecmp(&self, hart_idx: usize, val: u64) {
-        unsafe { self.mtimer.0[hart_idx].0.get().write_volatile(val) }
+        unsafe { self.mtimecmp[hart_idx].0.get().write_volatile(val) }
     }
 
     #[inline]
@@ -223,7 +230,7 @@ impl SifiveClint {
 #[test]
 fn test() {
     assert_eq!(core::mem::size_of::<MSWI>(), 0x4000);
-    assert_eq!(core::mem::size_of::<SSWI>(), 0x3ffc);
-    assert_eq!(core::mem::size_of::<MTIMER>(), 0x7ff8);
+    assert_eq!(core::mem::size_of::<SSWI>(), 0x4000);
+    assert_eq!(core::mem::size_of::<[MTIMECMP; 4095]>(), 0x7ff8);
     assert_eq!(core::mem::size_of::<SifiveClint>(), 0xc000);
 }
